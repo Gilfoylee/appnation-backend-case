@@ -19,7 +19,9 @@
     "explain:dev": "tsx src/scripts/explain.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:unit": "vitest run --project unit",
+    "test:integration": "vitest run --project integration"
   },
   "dependencies": {
     "fastify": "^5.12.8",
