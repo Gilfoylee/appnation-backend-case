@@ -24,7 +24,8 @@ export function buildApp({ service, logger, bodyLimitBytes }: AppOptions): Fasti
     void reply.code(404).send({ error: 'not_found' });
   });
 
-  app.get('/health', async () => ({ status: 'ok' }));
+  // Polled by the container healthcheck; only log problems.
+  app.get('/health', { logLevel: 'warn' }, async () => ({ status: 'ok' }));
   app.register(v1Routes, { prefix: '/v1', service });
 
   return app;

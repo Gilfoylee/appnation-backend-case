@@ -52,6 +52,12 @@ export class GenerationRepository {
    * seek directly to the cursor position and read only `limit` rows, regardless of page depth.
    */
   async listByUser(userId: string, limit: number, after?: HistoryPosition): Promise<Generation[]> {
+    const rows = await this.historyQuery(userId, limit, after).execute();
+    return rows.map(toGeneration);
+  }
+
+  /** The exact history query, exposed so the EXPLAIN script analyzes what production runs. */
+  historyQuery(userId: string, limit: number, after?: HistoryPosition) {
     let query = this.db
       .selectFrom('generations')
       .selectAll()
@@ -63,12 +69,7 @@ export class GenerationRepository {
       );
     }
 
-    const rows = await query
-      .orderBy('created_at', 'desc')
-      .orderBy('id', 'desc')
-      .limit(limit)
-      .execute();
-    return rows.map(toGeneration);
+    return query.orderBy('created_at', 'desc').orderBy('id', 'desc').limit(limit);
   }
 }
 

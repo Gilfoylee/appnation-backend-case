@@ -29,10 +29,12 @@ export async function migrateToLatest(db: Kysely<any>): Promise<string[]> {
 }
 
 async function main(): Promise<void> {
-  const { loadConfig } = await import('../config.js');
   const { createDatabase } = await import('./database.js');
-  const config = loadConfig();
-  const db = createDatabase({ connectionString: config.databaseUrl, maxConnections: 1 });
+  const databaseUrl = process.env.DATABASE_URL;
+  if (!databaseUrl) {
+    throw new Error('DATABASE_URL is required');
+  }
+  const db = createDatabase({ connectionString: databaseUrl, maxConnections: 1 });
   try {
     const applied = await migrateToLatest(db);
     console.log(applied.length > 0 ? `Applied migrations: ${applied.join(', ')}` : 'Database is up to date');
