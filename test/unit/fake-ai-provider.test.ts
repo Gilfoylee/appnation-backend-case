@@ -24,12 +24,12 @@ describe('FakeAiProvider (fake timers, no real waiting)', () => {
   });
 
   it('answers "Sonuç: <normalized prompt>" after ~300 ms', async () => {
-    const call = track(provider.generate('  Merhaba   DÜNYA '));
+    const call = track(provider.generate('  Hello   ÉCOLE '));
 
     await vi.advanceTimersByTimeAsync(299);
     expect(call.settled).toBe(false);
     await vi.advanceTimersByTimeAsync(1);
-    expect(call.value).toBe('Sonuç: merhaba dünya');
+    expect(call.value).toBe('Sonuç: hello école');
   });
 
   it('takes ~2 s for prompts starting with "slow"', async () => {

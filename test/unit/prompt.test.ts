@@ -29,7 +29,7 @@ describe('normalizePrompt', () => {
   it.each([
     ['merhaba', 'merhaba'],
     ['MERHABA', 'merhaba'],
-    ['  Merhaba   Dünya  ', 'merhaba dünya'],
+    ['  Hello   ÉCOLE  ', 'hello école'],
     ['tabs\tand\nnewlines', 'tabs and newlines'],
   ])('normalizes %j to %j', (input, expected) => {
     expect(normalizePrompt(input)).toBe(expected);
