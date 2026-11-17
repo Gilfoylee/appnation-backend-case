@@ -10,6 +10,8 @@ RUN npm run build
 
 FROM node:24-alpine AS runtime
 ENV NODE_ENV=production
+# Keep "docker compose exec app npm run …" output free of npm update notices.
+ENV NPM_CONFIG_UPDATE_NOTIFIER=false
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
