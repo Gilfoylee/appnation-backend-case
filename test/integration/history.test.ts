@@ -70,6 +70,16 @@ describe('GET /v1/generations', () => {
     expect([...createdAts].sort().reverse()).toEqual(createdAts);
   });
 
+  it('ends on a full last page without an extra empty page', async () => {
+    const userId = `user-${randomUUID()}`;
+    await insertRows(userId, 4, 2);
+
+    const { ids, pages } = await fetchAllPages(userId, 2);
+
+    expect(pages).toBe(2);
+    expect(new Set(ids).size).toBe(4);
+  });
+
   it('returns newest first and nextCursor null on the last page', async () => {
     const userId = `user-${randomUUID()}`;
     for (const prompt of ['first', 'second', 'third']) {
@@ -120,15 +130,25 @@ describe('GET /v1/generations', () => {
 
     const byDefault = await getJson(ctx.baseUrl, '/v1/generations', userId);
     const capped = await getJson(ctx.baseUrl, '/v1/generations?limit=1000', userId);
+    const huge = await getJson(ctx.baseUrl, '/v1/generations?limit=99999999999', userId);
 
     expect(byDefault.body.items).toHaveLength(20);
     expect(byDefault.body.nextCursor).toEqual(expect.any(String));
     expect(capped.body.items).toHaveLength(100);
+    expect(huge.body.items).toHaveLength(100);
   });
 
-  it.each(['0', '-1', 'abc', '1.5', ''])('returns 400 for limit=%s', async (limit) => {
+  it.each(['0', '-1', 'abc', '1.5', '', '1e2'])('returns 400 for limit=%s', async (limit) => {
     const response = await getJson(ctx.baseUrl, `/v1/generations?limit=${limit}`, `user-${randomUUID()}`);
     expect(response).toEqual({ status: 400, body: { error: 'invalid_limit' } });
+  });
+
+  it.each([
+    ['limit=2&limit=3', 'invalid_limit'],
+    ['cursor=a&cursor=b', 'invalid_cursor'],
+  ])('returns 400 for the repeated parameter in %s', async (query, error) => {
+    const response = await getJson(ctx.baseUrl, `/v1/generations?${query}`, `user-${randomUUID()}`);
+    expect(response).toEqual({ status: 400, body: { error } });
   });
 
   it.each([

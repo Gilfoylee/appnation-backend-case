@@ -11,11 +11,6 @@ const MAX_CURSOR_LENGTH = 512;
 
 const createBodySchema = z.object({ prompt: z.string() });
 
-const historyQuerySchema = z.object({
-  limit: z.string().optional(),
-  cursor: z.string().optional(),
-});
-
 export interface V1RouteOptions {
   service: GenerationService;
 }
@@ -34,15 +29,9 @@ export async function v1Routes(app: FastifyInstance, { service }: V1RouteOptions
   });
 
   app.get('/generations', async (request) => {
-    const query = historyQuerySchema.safeParse(request.query);
-    if (!query.success) {
-      throw invalidLimit();
-    }
-    const limit = parseLimit(query.data.limit);
-    const cursor = query.data.cursor;
-    if (cursor !== undefined && (cursor === '' || cursor.length > MAX_CURSOR_LENGTH)) {
-      throw invalidCursor();
-    }
+    const query = request.query as Record<string, unknown>;
+    const limit = parseLimit(query.limit);
+    const cursor = parseCursor(query.cursor);
 
     const page = await service.listHistory(request.userId, limit, cursor);
     return { items: page.items.map(toResponse), nextCursor: page.nextCursor };
@@ -54,12 +43,15 @@ export async function v1Routes(app: FastifyInstance, { service }: V1RouteOptions
   });
 }
 
-/** Defaults to 20; values above 100 are capped at 100; anything that is not a positive integer is rejected. */
-function parseLimit(raw: string | undefined): number {
+/**
+ * Defaults to 20; values above 100 are capped at 100. Anything that is not a single positive
+ * integer (e.g. `0`, `-1`, `1.5`, `abc`, or a repeated parameter) is rejected.
+ */
+function parseLimit(raw: unknown): number {
   if (raw === undefined) {
     return DEFAULT_PAGE_SIZE;
   }
-  if (!/^\d{1,6}$/.test(raw)) {
+  if (typeof raw !== 'string' || !/^\d+$/.test(raw)) {
     throw invalidLimit();
   }
   const limit = Number(raw);
@@ -67,6 +59,17 @@ function parseLimit(raw: string | undefined): number {
     throw invalidLimit();
   }
   return Math.min(limit, MAX_PAGE_SIZE);
+}
+
+/** Shape check only; the service decodes and validates the cursor's contents. */
+function parseCursor(raw: unknown): string | undefined {
+  if (raw === undefined) {
+    return undefined;
+  }
+  if (typeof raw !== 'string' || raw === '' || raw.length > MAX_CURSOR_LENGTH) {
+    throw invalidCursor();
+  }
+  return raw;
 }
 
 function toResponse(generation: Generation) {

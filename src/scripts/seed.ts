@@ -12,6 +12,9 @@ if (!databaseUrl) {
 }
 const userId = process.env.SEED_USER_ID ?? 'seed-user';
 const count = Number(process.env.SEED_COUNT ?? 100_000);
+if (!Number.isInteger(count) || count < 1) {
+  throw new Error('SEED_COUNT must be a positive integer');
+}
 
 const db = createDatabase({ connectionString: databaseUrl, maxConnections: 1 });
 try {

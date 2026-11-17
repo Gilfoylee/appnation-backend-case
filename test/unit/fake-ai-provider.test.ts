@@ -59,6 +59,20 @@ describe('FakeAiProvider (fake timers, no real waiting)', () => {
     expect(call.settled).toBe(true);
   });
 
+  it('matches the prefixes on the normalized prompt (case and surrounding whitespace do not matter)', async () => {
+    const call = track(provider.generate('  ERROR   Deneme '));
+
+    await vi.advanceTimersByTimeAsync(300);
+    expect(call.error).toBeInstanceOf(ProviderError);
+  });
+
+  it('only treats a keyword at the start as special', async () => {
+    const call = track(provider.generate('please timeout'));
+
+    await vi.advanceTimersByTimeAsync(300);
+    expect(call.value).toBe('Sonuç: please timeout');
+  });
+
   it('stops waiting and clears its timer as soon as the signal aborts', async () => {
     const controller = new AbortController();
     const call = track(provider.generate('timeout deneme', controller.signal));

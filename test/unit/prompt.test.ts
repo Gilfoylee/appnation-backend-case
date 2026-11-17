@@ -23,6 +23,10 @@ describe('preparePrompt', () => {
     expect(preparePrompt('😀'.repeat(2000))).not.toBeNull();
     expect(preparePrompt('😀'.repeat(2001))).toBeNull();
   });
+
+  it('rejects NUL characters, which PostgreSQL text cannot store', () => {
+    expect(preparePrompt('a\u0000b')).toBeNull();
+  });
 });
 
 describe('normalizePrompt', () => {

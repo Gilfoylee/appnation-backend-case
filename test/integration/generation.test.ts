@@ -1,5 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { buildApp } from '../../src/app.js';
+import { RedisGenerationCache } from '../../src/cache/generation-cache.js';
+import { type Generation, GenerationRepository } from '../../src/db/generations.repository.js';
+import { QuotaRepository } from '../../src/db/quota.repository.js';
+import { GenerationService } from '../../src/domain/generation.service.js';
+import { ProviderError } from '../../src/provider/ai-provider.js';
 import {
   countGenerations,
   createTestContext,
@@ -8,6 +14,7 @@ import {
   postGeneration,
   remainingQuota,
   resetState,
+  silentLogger,
   type TestContext,
 } from '../helpers/test-context.js';
 
@@ -65,6 +72,21 @@ describe('POST /v1/generations', () => {
       expect((await getJson(ctx.baseUrl, '/v1/generations')).status).toBe(401);
       expect((await getJson(ctx.baseUrl, '/v1/quota')).status).toBe(401);
     });
+
+    it('returns 400 when X-User-Id is longer than the 128 characters the schema allows', async () => {
+      const response = await postGeneration(ctx.baseUrl, 'u'.repeat(129), { prompt: 'hello' });
+
+      expect(response).toEqual({ status: 400, body: { error: 'invalid_user_id' } });
+      expect(ctx.provider.calls).toHaveLength(0);
+    });
+
+    it('identifies the user by the trimmed header value', async () => {
+      const userId = `user-${randomUUID()}`;
+
+      await postGeneration(ctx.baseUrl, `  ${userId}  `, { prompt: 'trimmed id' });
+
+      expect(await countGenerations(ctx.db, userId)).toBe(1);
+    });
   });
 
   describe('validation', () => {
@@ -74,6 +96,7 @@ describe('POST /v1/generations', () => {
       ['longer than 2000 characters', { prompt: 'a'.repeat(2001) }],
       ['not a string', { prompt: 42 }],
       ['missing', {}],
+      ['containing a NUL character', { prompt: 'a\u0000b' }],
     ])('returns 400 without calling the provider or touching the quota when the prompt is %s', async (_label, body) => {
       const userId = `user-${randomUUID()}`;
 
@@ -104,6 +127,25 @@ describe('POST /v1/generations', () => {
       const response = await postGeneration(ctx.baseUrl, `user-${randomUUID()}`, { prompt: 'x'.repeat(40_000) });
       expect(response).toEqual({ status: 413, body: { error: 'payload_too_large' } });
       expect(ctx.provider.calls).toHaveLength(0);
+    });
+
+    it('returns 415 for a body that is not JSON', async () => {
+      const response = await fetch(`${ctx.baseUrl}/v1/generations`, {
+        method: 'POST',
+        headers: { 'x-user-id': `user-${randomUUID()}`, 'content-type': 'application/xml' },
+        body: '<prompt>hello</prompt>',
+      });
+
+      expect(response.status).toBe(415);
+      expect(await response.json()).toEqual({ error: 'unsupported_media_type' });
+      expect(ctx.provider.calls).toHaveLength(0);
+    });
+  });
+
+  it('answers unknown routes with 404 in the same error shape', async () => {
+    expect(await getJson(ctx.baseUrl, '/v1/unknown', `user-${randomUUID()}`)).toEqual({
+      status: 404,
+      body: { error: 'not_found' },
     });
   });
 
@@ -201,6 +243,80 @@ describe('quota persistence', () => {
       expect((await postGeneration(ctx.baseUrl, userId, { prompt: 'early 1' })).status).toBe(201);
       expect(await remainingQuota(ctx.baseUrl, userId)).toBe(4);
     } finally {
+      await ctx.close();
+    }
+  });
+});
+
+/** The real repository, except that storing a generation always fails. */
+class FailingGenerationRepository extends GenerationRepository {
+  override async create(): Promise<Generation> {
+    throw new Error('simulated insert failure');
+  }
+}
+
+describe('quota refunds', () => {
+  it('refunds a failed request to the day it was reserved on, even across UTC midnight', async () => {
+    const userId = `user-${randomUUID()}`;
+    const clock = new MutableClock(new Date('2026-03-01T23:59:59.900Z'));
+    const ctx = await createTestContext({
+      clock,
+      provider: {
+        async generate() {
+          clock.set(new Date('2026-03-02T00:00:00.100Z')); // midnight passes while the provider works
+          throw new ProviderError('failed after midnight');
+        },
+      },
+    });
+    try {
+      await resetState(ctx);
+
+      const response = await postGeneration(ctx.baseUrl, userId, { prompt: 'crosses midnight' });
+
+      expect(response).toEqual({ status: 502, body: { error: 'provider_error' } });
+      const buckets = await ctx.db
+        .selectFrom('daily_quota_usage')
+        .select(['usage_date', 'used'])
+        .where('user_id', '=', userId)
+        .execute();
+      expect(buckets).toEqual([{ usage_date: '2026-03-01', used: 0 }]);
+    } finally {
+      await ctx.close();
+    }
+  });
+
+  it('gives the unit back and answers 500 when the generation cannot be stored', async () => {
+    const ctx = await createTestContext();
+    const logger = silentLogger();
+    const quota = new QuotaRepository(ctx.db);
+    const service = new GenerationService({
+      generations: new FailingGenerationRepository(ctx.db),
+      quota,
+      cache: new RedisGenerationCache(ctx.redis, 600, logger),
+      provider: ctx.provider,
+      clock: new MutableClock(new Date('2026-05-05T12:00:00.000Z')),
+      logger,
+      dailyQuota: 5,
+      providerTimeoutMs: 3_000,
+    });
+    const app = buildApp({ service, logger, bodyLimitBytes: 32 * 1024 });
+    try {
+      await resetState(ctx);
+      const userId = `user-${randomUUID()}`;
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/v1/generations',
+        headers: { 'x-user-id': userId },
+        payload: { prompt: 'cannot be stored' },
+      });
+
+      expect(response.statusCode).toBe(500);
+      expect(response.json()).toEqual({ error: 'internal_error' });
+      expect(ctx.provider.calls).toEqual(['cannot be stored']);
+      expect(await quota.getUsed(userId, '2026-05-05')).toBe(0);
+    } finally {
+      await app.close();
       await ctx.close();
     }
   });

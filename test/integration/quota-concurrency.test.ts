@@ -61,6 +61,37 @@ describe('daily quota under concurrent requests', () => {
     expect(ctx.provider.calls).toHaveLength(5);
   });
 
+  it('grants a concurrent burst only the allowance that is left', async () => {
+    const userId = `user-${randomUUID()}`;
+    for (let i = 0; i < 3; i++) {
+      expect((await postGeneration(ctx.baseUrl, userId, { prompt: `earlier ${i}` })).status).toBe(201);
+    }
+
+    const responses = await Promise.all(
+      Array.from({ length: 10 }, (_, i) => postGeneration(ctx.baseUrl, userId, { prompt: `later ${i}` })),
+    );
+
+    expect(responses.filter((response) => response.status === 201)).toHaveLength(2);
+    expect(responses.filter((response) => response.status === 429)).toHaveLength(8);
+    expect(await countGenerations(ctx.db, userId)).toBe(5);
+  });
+
+  it('returns the units of concurrently failing requests', async () => {
+    const userId = `user-${randomUUID()}`;
+
+    const failures = await Promise.all(
+      Array.from({ length: 5 }, (_, i) => postGeneration(ctx.baseUrl, userId, { prompt: `error ${i}` })),
+    );
+    expect(failures.map((response) => response.status)).toEqual([502, 502, 502, 502, 502]);
+    expect(await remainingQuota(ctx.baseUrl, userId)).toBe(5);
+
+    const successes = await Promise.all(
+      Array.from({ length: 5 }, (_, i) => postGeneration(ctx.baseUrl, userId, { prompt: `fine ${i}` })),
+    );
+    expect(successes.map((response) => response.status)).toEqual([201, 201, 201, 201, 201]);
+    expect(await remainingQuota(ctx.baseUrl, userId)).toBe(0);
+  });
+
   it('keeps quotas of different users independent', async () => {
     const [alice, bob] = [`alice-${randomUUID()}`, `bob-${randomUUID()}`];
 

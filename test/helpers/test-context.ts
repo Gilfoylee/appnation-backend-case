@@ -44,6 +44,8 @@ export interface TestContextOptions {
   clock?: Clock;
   /** Overrides the Redis URL, e.g. to simulate an unreachable Redis. */
   redisUrl?: string;
+  /** Replaces the fast fake provider; it is still wrapped so calls are recorded. */
+  provider?: AiProvider;
 }
 
 export interface TestContext {
@@ -68,9 +70,9 @@ export async function createTestContext(options: TestContextOptions = {}): Promi
   await waitForRedis(redis, options.redisUrl ? 200 : 5_000);
 
   const provider = new RecordingProvider(
-    new FakeAiProvider({ normalMs: 50, slowMs: 100, errorMs: 20, hangMs: 60_000 }),
+    options.provider ?? new FakeAiProvider({ normalMs: 50, slowMs: 100, errorMs: 20, hangMs: 60_000 }),
   );
-  const logger = pino({ level: 'silent' });
+  const logger = silentLogger();
   const service = createGenerationService({
     db,
     redis,
@@ -99,6 +101,10 @@ export async function createTestContext(options: TestContextOptions = {}): Promi
       redis.disconnect();
     },
   };
+}
+
+export function silentLogger() {
+  return pino({ level: 'silent' });
 }
 
 export async function resetState(ctx: Pick<TestContext, 'db' | 'redis'>): Promise<void> {
