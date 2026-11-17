@@ -3,8 +3,8 @@ import { createDatabase } from '../db/database.js';
 import { GenerationRepository } from '../db/generations.repository.js';
 
 /**
- * Prints EXPLAIN (ANALYZE, BUFFERS) for the history query exactly as the service builds it:
- * the first page, and a page deep in the history (after the 50,000th row) via the cursor.
+ * Prints EXPLAIN (ANALYZE, BUFFERS, COSTS OFF) for the history query exactly as the service builds
+ * it: the first page, and a page deep in the history (after the 50,000th row) via the cursor.
  */
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
@@ -18,7 +18,7 @@ const repository = new GenerationRepository(db);
 
 async function explain(title: string, query: ReturnType<GenerationRepository['historyQuery']>): Promise<void> {
   const compiled = query.compile();
-  const plan = await query.explain('text', sql`analyze, buffers`);
+  const plan = await query.explain('text', sql`analyze, buffers, costs off`);
   console.log(`-- ${title}`);
   console.log(`-- ${compiled.sql.replace(/\s+/g, ' ')}`);
   console.log(plan.map((row) => row['QUERY PLAN']).join('\n'));
