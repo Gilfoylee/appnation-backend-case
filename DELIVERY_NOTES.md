@@ -47,3 +47,18 @@ All errors have the shape `{ "error": "<code>" }`. Every `/v1` route requires a 
 - Required (b): `test/integration/cache.test.ts` sends `merhaba` then `MERHABA` and expects `cached: true`, no second provider call and an unchanged remaining quota.
 - Also covered: 401/400/413 with no side effects, 502 and 504 not counted, cached results after the quota is exhausted, errors not cached, the Redis-down fail-open path, quota persistence across a restart, the UTC midnight rollover (injected clock), and keyset pagination over rows sharing a `createdAt`.
 - The provider is the real fake with shortened delays, wrapped to record calls. Timing-sensitive unit tests use fake timers, so no test waits in real time.
+
+## Tips
+
+- I've sent you a postman collection to test
+- To get arror from AI provider, send prompt which is started with 'error' for example "error deneme"
+- To get timeout from AI provider, send prompt which is started with 'timeout' for example "timeout deneme"
+- To get slow response from AI provider, send prompt which is started with 'slow' for example "slow deneme"
+- Without X-User-Id, 401 unauthorized
+- {"prompt":" "}	400 invalid_prompt
+- {"prompt": (bozuk JSON)}	400 invalid_request
+- ?limit=0	400 invalid_limit
+- ?cursor=abc	400 invalid_cursor
+- When you want to work with seed data with the length 100.000, use "X-User-Id: seed-user" after running "docker compose exec app npm run seed" command
+- To send parallel 10 request run this command on the teminal 
+seq 1 10 | xargs -P 10 -I{} curl -s -o /dev/null -w '%{http_code}\n' -X POST http://localhost:3000/v1/generations -H "X-User-Id: parallel-$RANDOM" -H "Content-Type: application/json" -d '{"prompt":"parallel {}"}'
