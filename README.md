@@ -34,7 +34,7 @@ Quota lives in PostgreSQL, not Redis: it survives restarts and stays exact durin
 
 ## Time spent & known gaps
 
-Time spent: TODO hours.
+Time spent: 5 hours.
 
 - A crash mid-request keeps its reserved unit for the day.
 - No single-flight: concurrent misses for one prompt each call the provider.
